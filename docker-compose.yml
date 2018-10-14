@@ -1,0 +1,341 @@
+version: '2.3'
+
+#all kubernetes components are well dockerized and can be found:
+#https://console.cloud.google.com/gcr/images/google-containers/GLOBAL
+
+#let's assume server components are in a dedicated subnet
+#and able easily reach each other
+networks:
+  kubenet:
+    driver: bridge
+    ipam:
+      config:
+      - subnet: 172.20.0.0/16
+
+
+services:
+  #1-generate certificates. See generate-certs.sh script.
+  #contains openssl and kubectl
+  #gererates certificates and kubeconfig files
+  generate-certs:
+    build:
+      dockerfile: Dockerfile.kubeadm
+      context: .
+    entrypoint: /bin/bash
+    working_dir: /
+    tty: yes
+    command: >
+      -c '
+      (ls /certs/done && /bin/bash) ||
+      (./generate-certs.sh && touch /certs/done && /bin/bash)
+      '
+    environment:
+      #where kubectl should keep it's config
+      KUBECONFIG: /conf/admin.conf
+    networks:
+      - kubenet
+    healthcheck:
+      test: 'ls /certs/done'
+      interval: 5s
+      retries: 3
+      start_period: 3m
+    volumes:
+      - ./generate-certs.sh:/generate-certs.sh
+      - ./certs:/certs
+      - ./conf:/conf
+
+  #2-deploy etcd. The state of cluster is saved here.
+  etcd:
+    image: gcr.io/google-containers/etcd:3.2.24
+    #set hostname that will be used by api-server to reach etcd
+    hostname: etcd
+    entrypoint: /usr/local/bin/etcd
+    ports:
+      - 2379
+    networks:
+      - kubenet
+    command:
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --advertise-client-urls=https://etcd:2379
+      - --cert-file=/certs/etcd.crt
+      - --key-file=/certs/etcd.key
+      #trust kube-apiserver's certificate "kube-apiserver-etcd.crt"
+      #signed by etcd-ca.crt
+      - --trusted-ca-file=/certs/etcd-ca-bundle.crt
+    volumes:
+      - ./certs:/certs
+    healthcheck:
+      test: 'nc -z localhost 2379'
+      interval: 3s
+      retries: 3
+      start_period: 3m
+    depends_on:
+      generate-certs:
+        condition: service_healthy
+
+  #3-deploy kube-apiserver.
+  #https://kubernetes.io/docs/reference/using-api/api-overview/
+  kube-apiserver:
+    image: gcr.io/google-containers/kube-apiserver:v1.12.1
+    #kube-apiserver domain name is used by api-server's clients
+    #such as kube-controller-manager and scheduler
+    hostname: kube-apiserver
+    entrypoint: /usr/local/bin/kube-apiserver
+    networks:
+      - kubenet
+    ports:
+      - 6443:6443
+
+    command:
+      #full list of options
+      #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/
+      - --anonymous-auth=false
+      - --bind-address=0.0.0.0
+      - --etcd-servers=https://etcd:2379
+
+      #for authentication as a etcd's client
+      - --etcd-certfile=/certs/kube-apiserver-etcd.crt
+      - --etcd-keyfile=/certs/kube-apiserver-etcd.key
+
+      #trust etcd hosts that uses "etcd.crt" signed by etcd-ca.crt
+      - --etcd-cafile=/certs/etcd-ca-bundle.crt
+
+      #apiserver main certificates
+      - --tls-cert-file=/certs/kube-apiserver.crt
+      - --tls-private-key-file=/certs/kube-apiserver.key
+
+      #authenticate any client that uses a certificate signed by kubernetes-ca.crt
+      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
+      - --requestheader-client-ca-file=/certs/kubernetes-ca-bundle.crt
+
+      #enable bootstrap tokens, new feature
+      #https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
+      #https://kubernetes.io/docs/reference/access-authn-authz/authentication/#bootstrap-tokens
+      #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet-tls-bootstrapping/
+      - --enable-bootstrap-token-auth
+
+      #https://kubernetes.io/docs/reference/access-authn-authz/admission-controllers/#is-there-a-recommended-set-of-admission-controllers-to-use
+      - --enable-admission-plugins=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerationSeconds,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,ResourceQuota
+
+      #If enabled, tokens which are deleted from the API will be revoked
+      - --service-account-lookup
+
+      #for authentication as a kubelet's client
+      - --kubelet-client-certificate=/certs/kube-apiserver.crt
+      - --kubelet-client-key=/certs/kube-apiserver.key
+
+      #allow creating privileged docker containers
+      - --allow-privileged=true
+
+      #for signing bearer tokens of services accounts
+      #should be the same as kube-controller-manager's one
+      - --service-account-key-file=/certs/kubernetes-ca.key
+
+    volumes:
+      - ./certs:/certs
+    depends_on:
+      etcd:
+        condition: service_healthy
+      generate-certs:
+        condition: service_healthy
+    healthcheck:
+      test: 'nc -z localhost 8080'
+      interval: 3s
+      retries: 3
+      start_period: 3m
+    extra_hosts:
+    - kubelet:172.20.0.1
+
+  #4-deploy kube-controller-manager
+  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
+  kube-controller-manager:
+    image: gcr.io/google-containers/kube-controller-manager:v1.12.1
+    entrypoint: /usr/local/bin/kube-controller-manager
+    hostname: kube-controller-manager
+    command:
+      #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/
+
+      #kube config contains kube-controller-manager-apiserver.crt/key
+      #for authentication on kube-apiserver
+      - --kubeconfig=/conf/kube-controller-manager.conf
+
+      #trust any client that uses a certificate signed by kubernetes-ca.crt
+      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
+      - --requestheader-client-ca-file=/certs/kubernetes-ca-bundle.crt
+
+      #remove expired tokens
+      - --controllers=*,tokencleaner
+
+      #use cloud-controller-manager for cloud providers https://kubernetes.io/docs/reference/command-line-tools-reference/cloud-controller-manager/
+      - --cloud-provider=external
+
+      #used to issue cluster-scoped certificates
+      - --cluster-signing-cert-file=/certs/kubernetes-ca.crt
+      - --cluster-signing-key-file=/certs/kubernetes-ca.key
+
+      #this is for tokens generation
+      #service-account-private-key-file should be the same as kube-apiserver's one
+      - --service-account-private-key-file=/certs/kubernetes-ca.key
+      #will be included in service account's token secret
+      - --root-ca-file=/certs/kubernetes-ca-bundle.crt
+
+    volumes:
+    - ./conf:/conf
+    - ./certs:/certs
+    depends_on:
+      kube-apiserver:
+        condition: service_healthy
+      generate-certs:
+        condition: service_healthy
+    healthcheck:
+      test: 'nc -z localhost 10252'
+      interval: 3s
+      retries: 3
+      start_period: 3m
+    networks:
+      - kubenet
+
+  #5-deploy kube-scheduler
+  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
+  kube-scheduler:
+    image: gcr.io/google-containers/kube-scheduler:v1.12.1
+    entrypoint: /usr/local/bin/kube-scheduler
+    hostname: kube-sheduler
+    command:
+      #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/
+
+      - --config=/conf/kube-scheduler.yaml
+
+    volumes:
+    - ./conf:/conf
+    networks:
+      - kubenet
+    healthcheck:
+      test: 'nc -z localhost 10251'
+      interval: 3s
+      retries: 3
+      start_period: 3m
+    depends_on:
+      kube-apiserver:
+        condition: service_healthy
+      generate-certs:
+        condition: service_healthy
+
+
+  #6-deploy kubeadm
+  #this creates a container with configured kubectl an kubeadm utils
+  #besides that it creates temporary kubelet-bootstrap.conf that contains short ttl bootstrap token
+  kubeadm:
+    build:
+      dockerfile: Dockerfile.kubeadm
+      context: .
+    tty: yes
+    entrypoint: /bin/bash
+    working_dir: /
+    #create temporary bootstrap token in apiserver with ttl 1m that should enough for bootstrapping kubelet.
+    #then create temporary bootstrap config for kubelet
+    #the token will be revoked automatically in 1 minute
+    command: >
+      -c '(ls /conf/kubelet-bootstrap.conf && /bin/bash) ||
+      (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 1m k6u9qr.mdacndgrkcs6wamw &&
+       kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-cluster default-cluster --server=https://kube-apiserver:6443 --certificate-authority certs/kubernetes-ca-bundle.crt --embed-certs &&
+       kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-credentials kubelet-bootstrap --token=k6u9qr.mdacndgrkcs6wamw &&
+       kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-context default-system --cluster default-cluster --user kubelet-bootstrap &&
+       kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config use-context default-system && /bin/bash)'
+    environment:
+      #where kubeadm and kubectl should keep it's config
+      KUBECONFIG: /conf/admin.conf
+    volumes:
+      - ./conf:/conf
+      - ./certs:/certs
+    healthcheck:
+      test: 'ls /conf/kubelet-bootstrap.conf'
+      interval: 1s
+      retries: 3
+      start_period: 3m
+    depends_on:
+      generate-certs:
+        condition: service_healthy
+      kube-apiserver:
+        condition: service_healthy
+    networks:
+      - kubenet
+    extra_hosts:
+      - kubelet:172.20.0.1
+
+  #7-deploy kubelet
+  #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#synopsis
+  kubelet:
+    build:
+      context: .
+      dockerfile: Dockerfile.kubelet
+    entrypoint: /usr/local/bin/kubelet
+    command:
+      #see full list of options
+      #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+
+      - --anonymous-auth=false
+
+      #main config
+      - --config=/conf/kubelet.yaml
+
+      #config with temporary bootstrap token
+      - --bootstrap-kubeconfig=/conf/kubelet-bootstrap.conf
+
+      #this is created by kubelet automatically after bootstrapping
+      - --kubeconfig=/conf/kubelet.conf
+
+      #authenticate any client that uses a certificate signed by kubernetes-ca.crt
+      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
+
+      #allow creating privileged docker containers
+      - --allow-privileged=true
+
+    depends_on:
+      kube-apiserver:
+        condition: service_healthy
+      kubeadm:
+        condition: service_healthy
+    healthcheck:
+      test: 'curl localhost:10248'
+      interval: 1s
+      retries: 3
+      start_period: 3m
+    #it is described here how to start kubelet in docker
+    #https://github.com/kubernetes/kubernetes-anywhere/blob/master/phase2/ignition/vanilla/kubelet.service
+    network_mode: host
+    #as network_mode=host it cannot access kube-apiserver via virtual network "kubenet"
+    extra_hosts:
+      - kube-apiserver:127.0.0.1
+    pid: host
+    privileged: yes
+    volumes:
+      - ./conf:/conf
+      - ./certs:/certs
+      - /var/lib/kubelet:/var/lib/kubelet:shared
+      - /var/lib/docker:/var/lib/docker
+      - /var/run:/var/run
+      - /var/log:/var/log:shared
+      - /sys:/sys:ro
+      - /dev:/dev
+    memswap_limit: -1
+
+  #8-deploy dashboard
+  dashboard:
+    hostname: dashboard
+    image: gcr.io/google-containers/kubernetes-dashboard-amd64:v1.10.0
+    entrypoint: /dashboard
+    command:
+    - --kubeconfig=/conf/admin.conf
+    - --auto-generate-certificates=true
+    volumes:
+    - ./conf:/conf
+    ports:
+    - 8443:8443
+    networks:
+    - kubenet
+    depends_on:
+      kube-apiserver:
+        condition: service_healthy
+      generate-certs:
+        condition: service_healthy

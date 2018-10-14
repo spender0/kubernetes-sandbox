@@ -1,0 +1,18 @@
+FROM debian
+
+ADD https://storage.googleapis.com/kubernetes-release/release/v1.12.1/bin/linux/amd64/kubeadm \
+    /usr/local/bin/kubeadm
+
+ADD https://storage.googleapis.com/kubernetes-release/release/v1.12.1/bin/linux/amd64/kubectl \
+    /usr/local/bin/kubectl
+
+RUN chmod 755 /usr/local/bin/kubectl && \
+    chmod 755 /usr/local/bin/kubeadm && \
+    apt-get update && \
+    apt-get install -y curl net-tools openssl && \
+    rm -rf /var/lib/apt/lists/*
+
+
+ENTRYPOINT ['/bin/bash']
+
+CMD ['--help']

@@ -1,0 +1,12 @@
+FROM debian
+
+ADD https://storage.googleapis.com/kubernetes-release/release/v1.12.1/bin/linux/amd64/kubelet /usr/local/bin/kubelet
+
+RUN apt-get update && \
+    apt-get install -y curl iptables net-tools && \
+    rm -rf /var/lib/apt/lists/* && \
+    chmod 755 /usr/local/bin/kubelet
+
+ENTRYPOINT ['/usr/local/bin/kubelet']
+
+CMD ['--help']
