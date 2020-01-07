@@ -6,12 +6,12 @@ clientConnection:
   acceptContentTypes: ""
   burst: 100
   contentType: application/vnd.kubernetes.protobuf
-  kubeconfig: "/kube-scheduler.conf"
+  kubeconfig: "/conf/kube-scheduler.conf"
   qps: 50
 disablePreemption: false
 enableContentionProfiling: false
 enableProfiling: false
-failureDomains: kubernetes.io/hostname,failure-domain.beta.kubernetes.io/zone,failure-domain.beta.kubernetes.io/region
+#failureDomains: kubernetes.io/hostname,failure-domain.beta.kubernetes.io/zone,failure-domain.beta.kubernetes.io/region
 hardPodAffinitySymmetricWeight: 1
 healthzBindAddress: 0.0.0.0:10251
 kind: KubeSchedulerConfiguration

@@ -35,7 +35,8 @@ dashboard ui will be available here https://localhost:8443
 
 kubectl is available either via docker:
 
-`docker exec -it kubernetes-sandbox_kubeadm_1 kubectl docker exec -it kubernetes-sandbox_kubeadm_1 kubectl get nodes`
+`docker exec -it kubernetes-sandbox_kubeadm_1 bash`
+
 
 or you can install it https://kubernetes.io/docs/tasks/tools/install-kubectl/
 

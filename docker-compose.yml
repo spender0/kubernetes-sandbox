@@ -1,4 +1,4 @@
-version: '2.3'
+version: '3'
 
 #all kubernetes components are well dockerized and can be found:
 #https://console.cloud.google.com/gcr/images/google-containers/GLOBAL
@@ -10,7 +10,7 @@ networks:
     driver: bridge
     ipam:
       config:
-      - subnet: 172.20.0.0/16
+      - subnet: 172.19.2.0/24
 
 
 services:
@@ -38,7 +38,7 @@ services:
       test: 'ls /certs/done'
       interval: 5s
       retries: 3
-      start_period: 3m
+      #start_period: 3m
     volumes:
       - ./generate-certs.sh:/generate-certs.sh
       - ./certs:/certs
@@ -46,7 +46,13 @@ services:
 
   #2-deploy etcd. The state of cluster is saved here.
   etcd:
-    image: gcr.io/google-containers/etcd:3.2.24
+    image: gcr.io/google-containers/etcd:3.4.3
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     #set hostname that will be used by api-server to reach etcd
     hostname: etcd
     entrypoint: /usr/local/bin/etcd
@@ -65,18 +71,24 @@ services:
     volumes:
       - ./certs:/certs
     healthcheck:
-      test: 'nc -z localhost 2379'
+      test: 'ss | grep 2379'
       interval: 3s
       retries: 3
-      start_period: 3m
+      #start_period: 3m
     depends_on:
-      generate-certs:
-        condition: service_healthy
+      - generate-certs
+        #condition: service_healthy
 
   #3-deploy kube-apiserver.
   #https://kubernetes.io/docs/reference/using-api/api-overview/
   kube-apiserver:
-    image: gcr.io/google-containers/kube-apiserver:v1.12.1
+    image: gcr.io/google-containers/kube-apiserver:v1.17.0
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     #kube-apiserver domain name is used by api-server's clients
     #such as kube-controller-manager and scheduler
     hostname: kube-apiserver
@@ -134,22 +146,21 @@ services:
     volumes:
       - ./certs:/certs
     depends_on:
-      etcd:
-        condition: service_healthy
-      generate-certs:
-        condition: service_healthy
-    healthcheck:
-      test: 'nc -z localhost 8080'
-      interval: 3s
-      retries: 3
-      start_period: 3m
+      - etcd
+      - generate-certs
     extra_hosts:
-    - kubelet:172.20.0.1
+    - kubelet:172.19.2.1
 
   #4-deploy kube-controller-manager
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
   kube-controller-manager:
-    image: gcr.io/google-containers/kube-controller-manager:v1.12.1
+    image: gcr.io/google-containers/kube-controller-manager:v1.17.0
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     entrypoint: /usr/local/bin/kube-controller-manager
     hostname: kube-controller-manager
     command:
@@ -183,22 +194,21 @@ services:
     - ./conf:/conf
     - ./certs:/certs
     depends_on:
-      kube-apiserver:
-        condition: service_healthy
-      generate-certs:
-        condition: service_healthy
-    healthcheck:
-      test: 'nc -z localhost 10252'
-      interval: 3s
-      retries: 3
-      start_period: 3m
+      - kube-apiserver
+      - generate-certs
     networks:
       - kubenet
 
   #5-deploy kube-scheduler
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
   kube-scheduler:
-    image: gcr.io/google-containers/kube-scheduler:v1.12.1
+    image: gcr.io/google-containers/kube-scheduler:v1.17.0
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     entrypoint: /usr/local/bin/kube-scheduler
     hostname: kube-sheduler
     command:
@@ -210,16 +220,9 @@ services:
     - ./conf:/conf
     networks:
       - kubenet
-    healthcheck:
-      test: 'nc -z localhost 10251'
-      interval: 3s
-      retries: 3
-      start_period: 3m
     depends_on:
-      kube-apiserver:
-        condition: service_healthy
-      generate-certs:
-        condition: service_healthy
+      - kube-apiserver
+      - generate-certs
 
 
   #6-deploy kubeadm
@@ -229,6 +232,12 @@ services:
     build:
       dockerfile: Dockerfile.kubeadm
       context: .
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     tty: yes
     entrypoint: /bin/bash
     working_dir: /
@@ -237,7 +246,7 @@ services:
     #the token will be revoked automatically in 1 minute
     command: >
       -c '(ls /conf/kubelet-bootstrap.conf && /bin/bash) ||
-      (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 1m k6u9qr.mdacndgrkcs6wamw &&
+      (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 5m k6u9qr.mdacndgrkcs6wamw &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-cluster default-cluster --server=https://kube-apiserver:6443 --certificate-authority certs/kubernetes-ca-bundle.crt --embed-certs &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-credentials kubelet-bootstrap --token=k6u9qr.mdacndgrkcs6wamw &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-context default-system --cluster default-cluster --user kubelet-bootstrap &&
@@ -252,16 +261,14 @@ services:
       test: 'ls /conf/kubelet-bootstrap.conf'
       interval: 1s
       retries: 3
-      start_period: 3m
+      #start_period: 3m
     depends_on:
-      generate-certs:
-        condition: service_healthy
-      kube-apiserver:
-        condition: service_healthy
+      - generate-certs
+      - kube-apiserver
     networks:
       - kubenet
     extra_hosts:
-      - kubelet:172.20.0.1
+      - kubelet:172.19.2.1
 
   #7-deploy kubelet
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#synopsis
@@ -269,12 +276,21 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.kubelet
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 512M
+    restart: on-failure
     entrypoint: /usr/local/bin/kubelet
     command:
       #see full list of options
       #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
-
-      - --anonymous-auth=false
 
       #main config
       - --config=/conf/kubelet.yaml
@@ -285,22 +301,17 @@ services:
       #this is created by kubelet automatically after bootstrapping
       - --kubeconfig=/conf/kubelet.conf
 
-      #authenticate any client that uses a certificate signed by kubernetes-ca.crt
-      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
-
       #allow creating privileged docker containers
-      - --allow-privileged=true
+      #- --allow-privileged=true
 
     depends_on:
-      kube-apiserver:
-        condition: service_healthy
-      kubeadm:
-        condition: service_healthy
+      - kube-apiserver
+      - kubeadm
     healthcheck:
       test: 'curl localhost:10248'
       interval: 1s
       retries: 3
-      start_period: 3m
+      #start_period: 3m
     #it is described here how to start kubelet in docker
     #https://github.com/kubernetes/kubernetes-anywhere/blob/master/phase2/ignition/vanilla/kubelet.service
     network_mode: host
@@ -318,12 +329,17 @@ services:
       - /var/log:/var/log:shared
       - /sys:/sys:ro
       - /dev:/dev
-    memswap_limit: -1
 
   #8-deploy dashboard
   dashboard:
     hostname: dashboard
-    image: gcr.io/google-containers/kubernetes-dashboard-amd64:v1.10.0
+    image: gcr.io/google-containers/kubernetes-dashboard-amd64:v1.10.1
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 2s
+        max_attempts: 10
+    restart: on-failure
     entrypoint: /dashboard
     command:
     - --kubeconfig=/conf/admin.conf
@@ -335,7 +351,5 @@ services:
     networks:
     - kubenet
     depends_on:
-      kube-apiserver:
-        condition: service_healthy
-      generate-certs:
-        condition: service_healthy
+      - kube-apiserver
+      - generate-certs
