@@ -8,8 +8,14 @@ ADD https://storage.googleapis.com/kubernetes-release/release/${RELEASE}/bin/lin
 ADD https://storage.googleapis.com/kubernetes-release/release/${RELEASE}/bin/linux/amd64/kubectl \
     /usr/local/bin/kubectl
 
+ADD https://get.helm.sh/helm-v3.0.2-linux-amd64.tar.gz /tmp/
+
+
+
 RUN chmod 755 /usr/local/bin/kubectl && \
     chmod 755 /usr/local/bin/kubeadm && \
+    cd /tmp && tar -xvf helm-v3.0.2-linux-amd64.tar.gz && \
+    mv linux-amd64/helm /usr/local/bin/ && \
     apt-get update && \
     apt-get install -y curl net-tools openssl && \
     rm -rf /var/lib/apt/lists/*
