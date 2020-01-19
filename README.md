@@ -17,8 +17,6 @@ It is just well-commented code. I believe that well-commented code examples are 
 * New convenient feature is implemented https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens
 
 #### Requirements:
-sudo  sh -c 'echo "net.bridge.bridge-nf-call-iptables=1" >> /etc/sysctl.conf; sysctl -p'
-
 * Docker https://docs.docker.com/install/
 * Docker-compose https://docs.docker.com/compose/install/
 * Git https://git-scm.com/downloads
