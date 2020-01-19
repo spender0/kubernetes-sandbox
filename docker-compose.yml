@@ -304,9 +304,6 @@ services:
     restart: on-failure
     command: ""
     entrypoint: /node-entrypoint.sh
-    #environment:
-    #  KUBERNETES_SERVICE_HOST: kubernetes.default.svc.cluster.local
-    #  KUBERNETES_SERVICE_PORT: 443
     depends_on:
       - generate-certs
       - kube-apiserver
