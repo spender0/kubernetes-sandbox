@@ -1,0 +1,28 @@
+FROM debian:9
+
+ARG K8S_RELEASE=v1.17.1
+ARG CNI_RELEASE=v0.8.4
+
+RUN apt-get update && \
+    apt-get install -y iptables conntrack procps net-tools bash apt-transport-https ca-certificates curl gnupg2 software-properties-common && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - && \
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" && \
+    apt-get update && \
+    apt-get -y install docker-ce docker-ce-cli containerd.io && \
+    mkdir -p /opt/cni/bin && \
+    curl -L https://github.com/containernetworking/plugins/releases/download/${CNI_RELEASE}/cni-plugins-linux-amd64-${CNI_RELEASE}.tgz | tar xz -C /opt/cni/bin/
+
+
+ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kubelet /usr/local/bin/kubelet
+ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kube-proxy /usr/local/bin/kube-proxy
+
+
+ADD node-entrypoint.sh /node-entrypoint.sh
+
+RUN chmod 755 /usr/local/bin/kubelet && \
+    chmod 755 /usr/local/bin/kube-proxy && \
+    chmod 755 /node-entrypoint.sh
+
+ENTRYPOINT /node-entrypoint.sh
+
+CMD

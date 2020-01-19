@@ -4,10 +4,43 @@ apiVersion: kubelet.config.k8s.io/v1beta1
 #evictionHard:
 #  memory.available:  "1024Mi"
 failSwapOn: false
-serverTLSBootstrap: true
+
+# kubelet server certs auto approve doesn't work,
+# see https://github.com/kubernetes/kubernetes/issues/73356
+# and https://discuss.kubernetes.io/t/how-to-enable-auto-csr-approval-for-kubelet-server-certificates/4495
+serverTLSBootstrap: false
 
 authentication:
   anonymous:
     enabled: false
   x509:
     clientCAFile: /certs/kubernetes-ca-bundle.crt
+  webhook:
+    enabled: true
+
+authorization:
+  mode: Webhook
+
+#kubelet server certs
+tlsCertFile: /certs/kubelet.crt
+tlsPrivateKeyFile: /certs/kubelet.key
+
+#cluster ip of coredns service.
+#see docker-compose.yml, service kubeadm, command, helm call for coredns
+#use coredns as a dns server for pods
+clusterDNS:
+  - 10.1.0.2
+
+#adds "search default.svc.cluster.local svc.cluster.local cluster.local" to resolv.conf on pods
+clusterDomain: cluster.local
+
+#do not use host's resolv.conf if pod's dnsPolicy=default in pod spec
+#otherwise coredns will fail with error [FATAL] plugin/loop: Loop (127.0.0.1:54394 -> :53) detected for zone ".", see https://coredns.io/plugins/loop#troubleshooting. Query: "HINFO 3987623984016752523.986893640084572331."
+#this happens because nameserver is 127.0.0.11 inside kube-node docker container
+resolvConf: /conf/kubelet-resolv.conf
+
+#pod network CIRD. The value is specified according to Flannel CNI plugin. see https://coreos.com/flannel/docs/latest/kubernetes.html
+podCIDR: 10.244.0.0/16
+
+featureGates:
+  CSIMigration: false

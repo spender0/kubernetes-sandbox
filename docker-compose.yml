@@ -4,7 +4,7 @@ version: '3'
 #https://console.cloud.google.com/gcr/images/google-containers/GLOBAL
 
 #let's assume server components are in a dedicated subnet
-#and able easily reach each other
+#and able to reach each other
 networks:
   kubenet:
     driver: bridge
@@ -18,6 +18,7 @@ services:
   #contains openssl and kubectl
   #gererates certificates and kubeconfig files
   generate-certs:
+    restart: "no"
     build:
       dockerfile: Dockerfile.kubeadm
       context: .
@@ -25,36 +26,28 @@ services:
     working_dir: /
     tty: yes
     command: >
-      -c '
-      (ls /certs/done && /bin/bash) ||
-      (./generate-certs.sh && touch /certs/done && /bin/bash)
-      '
+      -c '(ls /certs/done) || (./generate-certs.sh && touch /certs/done)'
     environment:
       #where kubectl should keep it's config
       KUBECONFIG: /conf/admin.conf
     networks:
       - kubenet
-    healthcheck:
-      test: 'ls /certs/done'
-      interval: 5s
-      retries: 3
-      #start_period: 3m
     volumes:
       - ./generate-certs.sh:/generate-certs.sh
       - ./certs:/certs
       - ./conf:/conf
 
-  #2-deploy etcd. The state of cluster is saved here.
-  etcd:
+  #2-deploy etcd. The state of the cluster is saved here.
+  kube-etcd:
     image: gcr.io/google-containers/etcd:3.4.3
     deploy:
       restart_policy:
         condition: on-failure
-        delay: 2s
-        max_attempts: 10
+        delay: 0s
+        max_attempts: 15
     restart: on-failure
     #set hostname that will be used by api-server to reach etcd
-    hostname: etcd
+    hostname: kube-etcd
     entrypoint: /usr/local/bin/etcd
     ports:
       - 2379
@@ -63,11 +56,11 @@ services:
     command:
       - --listen-client-urls=https://0.0.0.0:2379
       - --advertise-client-urls=https://etcd:2379
-      - --cert-file=/certs/etcd.crt
-      - --key-file=/certs/etcd.key
+      - --cert-file=/certs/etcd/server.crt
+      - --key-file=/certs/etcd/server.key
       #trust kube-apiserver's certificate "kube-apiserver-etcd.crt"
       #signed by etcd-ca.crt
-      - --trusted-ca-file=/certs/etcd-ca-bundle.crt
+      - --trusted-ca-file=/certs/etcd/ca-bundle.crt
     volumes:
       - ./certs:/certs
     healthcheck:
@@ -82,12 +75,12 @@ services:
   #3-deploy kube-apiserver.
   #https://kubernetes.io/docs/reference/using-api/api-overview/
   kube-apiserver:
-    image: gcr.io/google-containers/kube-apiserver:v1.17.0
+    image: gcr.io/google-containers/kube-apiserver:v1.16.4
     deploy:
       restart_policy:
         condition: on-failure
-        delay: 2s
-        max_attempts: 10
+        delay: 0s
+        max_attempts: 15
     restart: on-failure
     #kube-apiserver domain name is used by api-server's clients
     #such as kube-controller-manager and scheduler
@@ -97,20 +90,19 @@ services:
       - kubenet
     ports:
       - 6443:6443
-
     command:
       #full list of options
       #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/
       - --anonymous-auth=false
       - --bind-address=0.0.0.0
-      - --etcd-servers=https://etcd:2379
+      - --etcd-servers=https://kube-etcd:2379
 
       #for authentication as a etcd's client
-      - --etcd-certfile=/certs/kube-apiserver-etcd.crt
-      - --etcd-keyfile=/certs/kube-apiserver-etcd.key
+      - --etcd-certfile=/certs/apiserver-etcd-client.crt
+      - --etcd-keyfile=/certs/apiserver-etcd-client.key
 
-      #trust etcd hosts that uses "etcd.crt" signed by etcd-ca.crt
-      - --etcd-cafile=/certs/etcd-ca-bundle.crt
+      #trust etcd hosts that use "etcd/server.crt" signed by etcd/ca.crt
+      - --etcd-cafile=/certs/etcd/ca-bundle.crt
 
       #apiserver main certificates
       - --tls-cert-file=/certs/kube-apiserver.crt
@@ -118,7 +110,7 @@ services:
 
       #authenticate any client that uses a certificate signed by kubernetes-ca.crt
       - --client-ca-file=/certs/kubernetes-ca-bundle.crt
-      - --requestheader-client-ca-file=/certs/kubernetes-ca-bundle.crt
+      - --requestheader-client-ca-file=/certs/front-proxy-ca-bundle.crt
 
       #enable bootstrap tokens, new feature
       #https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens/
@@ -133,8 +125,8 @@ services:
       - --service-account-lookup
 
       #for authentication as a kubelet's client
-      - --kubelet-client-certificate=/certs/kube-apiserver.crt
-      - --kubelet-client-key=/certs/kube-apiserver.key
+      - --kubelet-client-certificate=/certs/apiserver-kubelet-client.crt
+      - --kubelet-client-key=/certs/apiserver-kubelet-client.key
 
       #allow creating privileged docker containers
       - --allow-privileged=true
@@ -143,89 +135,19 @@ services:
       #should be the same as kube-controller-manager's one
       - --service-account-key-file=/certs/kubernetes-ca.key
 
+      #the range of ClusterIPs in the Services
+      - --service-cluster-ip-range=10.1.0.0/16
+
+      #enable role based authorization control https://kubernetes.io/docs/reference/access-authn-authz/rbac/#controller-roles
+      - --authorization-mode=RBAC
+
     volumes:
       - ./certs:/certs
     depends_on:
-      - etcd
-      - generate-certs
-    extra_hosts:
-    - kubelet:172.19.2.1
-
-  #4-deploy kube-controller-manager
-  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
-  kube-controller-manager:
-    image: gcr.io/google-containers/kube-controller-manager:v1.17.0
-    deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 2s
-        max_attempts: 10
-    restart: on-failure
-    entrypoint: /usr/local/bin/kube-controller-manager
-    hostname: kube-controller-manager
-    command:
-      #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/
-
-      #kube config contains kube-controller-manager-apiserver.crt/key
-      #for authentication on kube-apiserver
-      - --kubeconfig=/conf/kube-controller-manager.conf
-
-      #trust any client that uses a certificate signed by kubernetes-ca.crt
-      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
-      - --requestheader-client-ca-file=/certs/kubernetes-ca-bundle.crt
-
-      #remove expired tokens
-      - --controllers=*,tokencleaner
-
-      #use cloud-controller-manager for cloud providers https://kubernetes.io/docs/reference/command-line-tools-reference/cloud-controller-manager/
-      - --cloud-provider=external
-
-      #used to issue cluster-scoped certificates
-      - --cluster-signing-cert-file=/certs/kubernetes-ca.crt
-      - --cluster-signing-key-file=/certs/kubernetes-ca.key
-
-      #this is for tokens generation
-      #service-account-private-key-file should be the same as kube-apiserver's one
-      - --service-account-private-key-file=/certs/kubernetes-ca.key
-      #will be included in service account's token secret
-      - --root-ca-file=/certs/kubernetes-ca-bundle.crt
-
-    volumes:
-    - ./conf:/conf
-    - ./certs:/certs
-    depends_on:
-      - kube-apiserver
-      - generate-certs
-    networks:
-      - kubenet
-
-  #5-deploy kube-scheduler
-  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
-  kube-scheduler:
-    image: gcr.io/google-containers/kube-scheduler:v1.17.0
-    deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 2s
-        max_attempts: 10
-    restart: on-failure
-    entrypoint: /usr/local/bin/kube-scheduler
-    hostname: kube-sheduler
-    command:
-      #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/
-
-      - --config=/conf/kube-scheduler.yaml
-
-    volumes:
-    - ./conf:/conf
-    networks:
-      - kubenet
-    depends_on:
-      - kube-apiserver
+      - kube-etcd
       - generate-certs
 
-
-  #6-deploy kubeadm
+  #4-deploy kubeadm
   #this creates a container with configured kubectl an kubeadm utils
   #besides that it creates temporary kubelet-bootstrap.conf that contains short ttl bootstrap token
   kubeadm:
@@ -235,8 +157,8 @@ services:
     deploy:
       restart_policy:
         condition: on-failure
-        delay: 2s
-        max_attempts: 10
+        delay: 1s
+        max_attempts: 15
     restart: on-failure
     tty: yes
     entrypoint: /bin/bash
@@ -245,90 +167,157 @@ services:
     #then create temporary bootstrap config for kubelet
     #the token will be revoked automatically in 1 minute
     command: >
-      -c '(ls /conf/kubelet-bootstrap.conf && /bin/bash) ||
-      (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 5m k6u9qr.mdacndgrkcs6wamw &&
+      -c '
+       kubectl --kubeconfig=/conf/admin.conf apply -f /conf/kubelet-tls-bootstrapping.yaml &&
+       ((ls /conf/kubelet-bootstrap.conf) ||
+       (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 60m k6u9qr.mdacndgrkcs6wamw &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-cluster default-cluster --server=https://kube-apiserver:6443 --certificate-authority certs/kubernetes-ca-bundle.crt --embed-certs &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-credentials kubelet-bootstrap --token=k6u9qr.mdacndgrkcs6wamw &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-context default-system --cluster default-cluster --user kubelet-bootstrap &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config use-context default-system &&
+       chmod 777 /conf && chmod -R 666 /conf/*)) &&
+       kubectl --kubeconfig=/conf/admin.conf apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml &&
        helm repo add stable https://kubernetes-charts.storage.googleapis.com &&
        helm repo update &&
-       helm --kubeconfig=/conf/admin.conf upgrade --install --wait --namespace kube-system kubernetes-dashboard stable/kubernetes-dashboard && /bin/bash)'
+       ((helm --kubeconfig=conf/admin.conf list -a -n kube-system | grep coredns) ||
+       (helm --kubeconfig=conf/admin.conf upgrade --install --namespace kube-system coredns stable/coredns --set service.clusterIP=10.1.0.2)) &&
+       ((helm --kubeconfig=conf/admin.conf list -a -n kube-system | grep kubernetes-dashboard) ||
+       (helm --kubeconfig=/conf/admin.conf upgrade --install --namespace kube-system kubernetes-dashboard stable/kubernetes-dashboard))'
     environment:
       #where kubeadm and kubectl should keep it's config
       KUBECONFIG: /conf/admin.conf
     volumes:
       - ./conf:/conf
       - ./certs:/certs
-    healthcheck:
-      test: 'ls /conf/kubelet-bootstrap.conf'
-      interval: 1s
-      retries: 3
-      #start_period: 3m
     depends_on:
       - generate-certs
       - kube-apiserver
     networks:
       - kubenet
-    extra_hosts:
-      - kubelet:172.19.2.1
 
-  #7-deploy kubelet
-  #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/#synopsis
-  kubelet:
-    build:
-      context: .
-      dockerfile: Dockerfile.kubelet
+
+  #5-deploy kube-controller-manager
+  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
+  kube-controller-manager:
+    hostname: kube-controller-manager
+    image: gcr.io/google-containers/kube-controller-manager:v1.16.4
     deploy:
       restart_policy:
         condition: on-failure
-        delay: 2s
-        max_attempts: 10
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 512M
+        delay: 0s
+        max_attempts: 15
     restart: on-failure
-    entrypoint: /usr/local/bin/kubelet
+    entrypoint: /usr/local/bin/kube-controller-manager
+    #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/
     command:
-      #see full list of options
-      #https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
+      #kube config contains kube-controller-manager-apiserver.crt/key
+      #for authentication on kube-apiserver
+      - --kubeconfig=/conf/kube-controller-manager.conf
+      - --authentication-kubeconfig=/conf/kube-controller-manager.conf
+      - --authorization-kubeconfig=/conf/kube-controller-manager.conf
 
-      #main config
-      - --config=/conf/kubelet.yaml
+      #trust any client that uses a certificate signed by kubernetes-ca.crt
+      - --client-ca-file=/certs/kubernetes-ca-bundle.crt
+      - --requestheader-client-ca-file=/certs/front-proxy-ca-bundle.crt
 
-      #config with temporary bootstrap token
-      - --bootstrap-kubeconfig=/conf/kubelet-bootstrap.conf
+      #remove expired tokens, sign bootstrap tokens
+      - --controllers=*,tokencleaner,bootstrapsigner
 
-      #this is created by kubelet automatically after bootstrapping
-      - --kubeconfig=/conf/kubelet.conf
+      #use cloud-controller-manager for cloud providers https://kubernetes.io/docs/reference/command-line-tools-reference/cloud-controller-manager/
+      - --cloud-provider=external
+      #used to issue cluster-scoped certificates
+      - --cluster-signing-cert-file=/certs/kubernetes-ca.crt
+      - --cluster-signing-key-file=/certs/kubernetes-ca.key
 
-      #allow creating privileged docker containers
-      #- --allow-privileged=true
+      #this is for tokens generation
+      #service-account-private-key-file should be the same as kube-apiserver's one
+      - --service-account-private-key-file=/certs/kubernetes-ca.key
 
+      #will be included in service account's token secret
+      - --root-ca-file=/certs/kubernetes-ca-bundle.crt
+
+      #each control loop is started using a separate service account
+      #https://kubernetes.io/docs/reference/access-authn-authz/rbac/#controller-roles
+      - --use-service-account-credentials=true
+
+      #CIDR Range for Pods in cluster.
+      - --cluster-cidr=10.244.0.0/16
+      #the range of ClusterIPs in the Services
+      - --service-cluster-ip-range=10.1.0.0/16
+      - --allocate-node-cidrs=true
+    volumes:
+      - ./conf:/conf
+      - ./certs:/certs
     depends_on:
       - kube-apiserver
+      - generate-certs
+      - kube-etcd
       - kubeadm
+    networks:
+      - kubenet
+
+
+  #6-deploy kube-scheduler
+  #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
+  kube-scheduler:
+    image: gcr.io/google-containers/kube-scheduler:v1.16.4
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 0s
+        max_attempts: 15
+    restart: on-failure
+    entrypoint: /bin/sh
+    hostname: kube-sheduler
+    #full list of options https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/
+    command: >
+      -c 'sleep 10 && /usr/local/bin/kube-scheduler
+      --config=/conf/kube-scheduler.yaml
+      --authentication-kubeconfig=/conf/kube-scheduler.conf
+      --authorization-kubeconfig=/conf/kube-scheduler.conf'
+    volumes:
+      - ./conf:/conf
+    networks:
+      - kubenet
+    depends_on:
+      - kube-etcd
+      - kube-apiserver
+      - generate-certs
+      - kube-controller-manager
+      - kubeadm
+
+
+#  #7-deploy node with kubelet and kube-proxy
+  kube-node:
+    hostname: kube-node
+    networks:
+      - kubenet
+    privileged: yes
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 1s
+        max_attempts: 15
+    restart: on-failure
+    command: ""
+    entrypoint: /node-entrypoint.sh
+    #environment:
+    #  KUBERNETES_SERVICE_HOST: kubernetes.default.svc.cluster.local
+    #  KUBERNETES_SERVICE_PORT: 443
+    depends_on:
+      - generate-certs
+      - kube-apiserver
+      - kubeadm
+      - kube-controller-manager
+      - kube-scheduler
     healthcheck:
       test: 'curl localhost:10248'
       interval: 1s
       retries: 3
       #start_period: 3m
-    #it is described here how to start kubelet in docker
-    #https://github.com/kubernetes/kubernetes-anywhere/blob/master/phase2/ignition/vanilla/kubelet.service
-    network_mode: host
-    #as network_mode=host it cannot access kube-apiserver via virtual network "kubenet"
-    extra_hosts:
-      - kube-apiserver:127.0.0.1
-    pid: host
-    privileged: yes
     volumes:
       - ./conf:/conf
       - ./certs:/certs
-      - /var/lib/kubelet:/var/lib/kubelet:shared
-      - /var/lib/docker:/var/lib/docker
-      - /var/run:/var/run
-      - /var/log:/var/log:shared
-      - /sys:/sys:ro
-      - /dev:/dev

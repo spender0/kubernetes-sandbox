@@ -17,6 +17,8 @@ It is just well-commented code. I believe that well-commented code examples are 
 * New convenient feature is implemented https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens
 
 #### Requirements:
+sudo  sh -c 'echo "net.bridge.bridge-nf-call-iptables=1" >> /etc/sysctl.conf; sysctl -p'
+
 * Docker https://docs.docker.com/install/
 * Docker-compose https://docs.docker.com/compose/install/
 * Git https://git-scm.com/downloads
@@ -31,25 +33,26 @@ cd kubernetes-sandbox
 docker-compose up -d
 ```
 
-dashboard ui will be available here https://localhost:8443
-
 kubectl is available either via docker:
 
 `docker exec -it kubernetes-sandbox_kubeadm_1 bash`
 
-
 or you can install it https://kubernetes.io/docs/tasks/tools/install-kubectl/
 
-Then run:
+and then run:
 
-`kubectl --kubeconfig=conf/admin.conf kubectl get nodes` 
+```
+export KUBECONFIG=conf/admin-local.conf
+
+kubectl -n kube-system get pods
+``` 
 
 #### Stop:
 ```
 docker-compose down
 ```
 
-#### Remove fully:
+#### Remove completely:
 ```
 docker-compose down
 
