@@ -1,6 +1,6 @@
-FROM debian:10
+FROM debian:9
 
-ARG K8S_RELEASE=v1.17.
+ARG K8S_RELEASE=v1.17.2
 ARG CNI_RELEASE=v0.8.4
 
 RUN apt-get update && \
