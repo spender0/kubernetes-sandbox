@@ -75,7 +75,7 @@ services:
   #3-deploy kube-apiserver.
   #https://kubernetes.io/docs/reference/using-api/api-overview/
   kube-apiserver:
-    image: gcr.io/google-containers/kube-apiserver:v1.16.4
+    image: gcr.io/google-containers/kube-apiserver:v1.17.2
     deploy:
       restart_policy:
         condition: on-failure
@@ -200,7 +200,7 @@ services:
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
   kube-controller-manager:
     hostname: kube-controller-manager
-    image: gcr.io/google-containers/kube-controller-manager:v1.16.4
+    image: gcr.io/google-containers/kube-controller-manager:v1.17.2
     deploy:
       restart_policy:
         condition: on-failure
@@ -260,7 +260,7 @@ services:
   #6-deploy kube-scheduler
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
   kube-scheduler:
-    image: gcr.io/google-containers/kube-scheduler:v1.16.4
+    image: gcr.io/google-containers/kube-scheduler:v1.17.2
     deploy:
       restart_policy:
         condition: on-failure

@@ -1,6 +1,6 @@
-FROM debian
+FROM debian:10
 
-ARG RELEASE=v1.17.0
+ARG RELEASE=v1.17.2
 
 ADD https://storage.googleapis.com/kubernetes-release/release/${RELEASE}/bin/linux/amd64/kubeadm \
     /usr/local/bin/kubeadm
