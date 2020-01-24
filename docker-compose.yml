@@ -55,7 +55,7 @@ services:
       - kubenet
     command:
       - --listen-client-urls=https://0.0.0.0:2379
-      - --advertise-client-urls=https://etcd:2379
+      - --advertise-client-urls=https://kube-etcd:2379
       - --cert-file=/certs/etcd/server.crt
       - --key-file=/certs/etcd/server.key
       #trust kube-apiserver's certificate "kube-apiserver-etcd.crt"

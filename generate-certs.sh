@@ -55,7 +55,7 @@ openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=kube-apise
 openssl x509 -req -days 9999 \
   -extfile <(printf "subjectAltName=IP:10.1.0.1,IP:127.0.0.1,DNS:kubernetes.default.svc.cluster.local,DNS:kube-apiserver,DNS:localhost") \
   -sha256  -CA certs/kubernetes-ca.crt -CAkey certs/kubernetes-ca.key -set_serial 01  -in certs/kube-apiserver.csr -out certs/kube-apiserver.crt
-cat certs/kube-apiserver.crt certs/kube-apiserver.key > certs/kube-apiserver.pem
+#cat certs/kube-apiserver.crt certs/kube-apiserver.key > certs/kube-apiserver.pem
 
 #kube-apiserver as a client of kubelet:
 #https://kubernetes.io/docs/setup/best-practices/certificates/#all-certificates
@@ -102,6 +102,7 @@ kubectl config set-cluster default-cluster --server=https://kube-apiserver:6443 
 kubectl config set-credentials default-admin --client-key certs/admin.key --client-certificate certs/admin.crt --embed-certs
 kubectl config set-context default-system --cluster default-cluster --user 	default-admin
 kubectl config use-context default-system
+
 
 #generate kubeconfig for administrator (for running kubectl from the host):
 export KUBECONFIG=conf/admin-local.conf
