@@ -41,7 +41,7 @@ services:
 
   #2-deploy etcd. The state of the cluster is saved here.
   kube-etcd:
-    image: gcr.io/google-containers/etcd:3.4.3
+    image: gcr.io/google-containers/etcd:${ETCD_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
