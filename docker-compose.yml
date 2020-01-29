@@ -22,6 +22,8 @@ services:
     build:
       dockerfile: Dockerfile.kubeadm
       context: .
+      args:
+        K8S_RELEASE: ${K8S_RELEASE}
     entrypoint: /bin/bash
     working_dir: /
     tty: yes
@@ -75,7 +77,7 @@ services:
   #3-deploy kube-apiserver.
   #https://kubernetes.io/docs/reference/using-api/api-overview/
   kube-apiserver:
-    image: gcr.io/google-containers/kube-apiserver:v1.17.2
+    image: gcr.io/google-containers/kube-apiserver:${K8S_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
@@ -200,7 +202,7 @@ services:
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-controller-manager/#synopsis
   kube-controller-manager:
     hostname: kube-controller-manager
-    image: gcr.io/google-containers/kube-controller-manager:v1.17.2
+    image: gcr.io/google-containers/kube-controller-manager:${K8S_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
@@ -260,7 +262,7 @@ services:
   #6-deploy kube-scheduler
   #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-scheduler/#synopsis
   kube-scheduler:
-    image: gcr.io/google-containers/kube-scheduler:v1.17.2
+    image: gcr.io/google-containers/kube-scheduler:${K8S_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
@@ -296,6 +298,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.node
+      args:
+        K8S_RELEASE: ${K8S_RELEASE}
+        CNI_RELEASE: ${CNI_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure

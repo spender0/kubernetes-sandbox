@@ -1,11 +1,11 @@
 FROM debian:9
 
-ARG RELEASE=v1.17.2
+ARG K8S_RELEASE=v1.17.2
 
-ADD https://storage.googleapis.com/kubernetes-release/release/${RELEASE}/bin/linux/amd64/kubeadm \
+ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kubeadm \
     /usr/local/bin/kubeadm
 
-ADD https://storage.googleapis.com/kubernetes-release/release/${RELEASE}/bin/linux/amd64/kubectl \
+ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kubectl \
     /usr/local/bin/kubectl
 
 ADD https://get.helm.sh/helm-v3.0.2-linux-amd64.tar.gz /tmp/
