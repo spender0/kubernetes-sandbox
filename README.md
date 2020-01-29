@@ -54,7 +54,7 @@ docker-compose down
 ```
 docker-compose down
 
-git reset --hard
+git clean -f -d
 ```
 
 #### References
