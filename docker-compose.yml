@@ -40,7 +40,7 @@ services:
       - ./conf:/conf
 
   #2-deploy etcd. The state of the cluster is saved here.
-  kube-etcd:
+  kube-etcd1:
     image: gcr.io/google-containers/etcd:${ETCD_RELEASE}
     deploy:
       restart_policy:
@@ -49,19 +49,34 @@ services:
         max_attempts: 15
     restart: on-failure
     #set hostname that will be used by api-server to reach etcd
-    hostname: kube-etcd
+    hostname: kube-etcd1
     entrypoint: /usr/local/bin/etcd
     ports:
       - 2379
     networks:
       - kubenet
+    #https://github.com/etcd-io/etcd/blob/master/Documentation/op-guide/configuration.md
     command:
+      #cluster settings
+      - --name=kube-etcd1
+      - --initial-advertise-peer-urls=https://kube-etcd1:2380
+      - --initial-cluster=kube-etcd1=https://kube-etcd1:2380,kube-etcd2=https://kube-etcd2:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=secret-token
+      #listen settings
       - --listen-client-urls=https://0.0.0.0:2379
-      - --advertise-client-urls=https://kube-etcd:2379
+      - --listen-peer-urls=https://0.0.0.0:2380
+      - --advertise-client-urls=https://kube-etcd1:2379
+      #tls settings
       - --cert-file=/certs/etcd/server.crt
       - --key-file=/certs/etcd/server.key
-      #trust kube-apiserver's certificate "kube-apiserver-etcd.crt"
-      #signed by etcd-ca.crt
+      - --client-cert-auth=true
+      - --peer-client-cert-auth=true
+      - --peer-trusted-ca-file=/certs/etcd/ca-bundle.crt
+      - --peer-cert-file=/certs/etcd/peer.crt
+      - --peer-key-file=/certs/etcd/peer.key
+      #trust kube-apiserver's certificate "apiserver-etcd-client.crt"
+      #signed by certs/etcd/ca.crt
       - --trusted-ca-file=/certs/etcd/ca-bundle.crt
     volumes:
       - ./certs:/certs
@@ -72,7 +87,53 @@ services:
       #start_period: 3m
     depends_on:
       - generate-certs
-        #condition: service_healthy
+  kube-etcd2:
+    image: gcr.io/google-containers/etcd:${ETCD_RELEASE}
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 0s
+        max_attempts: 15
+    restart: on-failure
+    #set hostname that will be used by api-server to reach etcd
+    hostname: kube-etcd2
+    entrypoint: /usr/local/bin/etcd
+    ports:
+      - 2379
+    networks:
+      - kubenet
+    #https://github.com/etcd-io/etcd/blob/master/Documentation/op-guide/configuration.md
+    command:
+      #cluster settings
+      - --name=kube-etcd2
+      - --initial-advertise-peer-urls=https://kube-etcd2:2380
+      - --initial-cluster=kube-etcd1=https://kube-etcd1:2380,kube-etcd2=https://kube-etcd2:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=secret-token
+      #listen settings
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --listen-peer-urls=https://0.0.0.0:2380
+      - --advertise-client-urls=https://kube-etcd2:2379
+      #tls settings
+      - --cert-file=/certs/etcd/server.crt
+      - --key-file=/certs/etcd/server.key
+      - --client-cert-auth=true
+      - --peer-client-cert-auth=true
+      - --peer-trusted-ca-file=/certs/etcd/ca-bundle.crt
+      - --peer-cert-file=/certs/etcd/peer.crt
+      - --peer-key-file=/certs/etcd/peer.key
+      #trust kube-apiserver's certificate "apiserver-etcd-client.crt"
+      #signed by certs/etcd/ca.crt
+      - --trusted-ca-file=/certs/etcd/ca-bundle.crt
+    volumes:
+      - ./certs:/certs
+    healthcheck:
+      test: 'ss | grep 2379'
+      interval: 3s
+      retries: 3
+      #start_period: 3m
+    depends_on:
+      - generate-certs
 
   #3-deploy kube-apiserver.
   #https://kubernetes.io/docs/reference/using-api/api-overview/
@@ -97,7 +158,7 @@ services:
       #https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/
       - --anonymous-auth=false
       - --bind-address=0.0.0.0
-      - --etcd-servers=https://kube-etcd:2379
+      - --etcd-servers=https://kube-etcd1:2379
 
       #for authentication as a etcd's client
       - --etcd-certfile=/certs/apiserver-etcd-client.crt
@@ -146,7 +207,7 @@ services:
     volumes:
       - ./certs:/certs
     depends_on:
-      - kube-etcd
+      - kube-etcd1
       - generate-certs
 
   #4-deploy kubeadm
@@ -253,7 +314,6 @@ services:
     depends_on:
       - kube-apiserver
       - generate-certs
-      - kube-etcd
       - kubeadm
     networks:
       - kubenet
@@ -282,14 +342,13 @@ services:
     networks:
       - kubenet
     depends_on:
-      - kube-etcd
       - kube-apiserver
       - generate-certs
       - kube-controller-manager
       - kubeadm
 
 
-#  #7-deploy node with kubelet and kube-proxy
+  #7-deploy node with kubelet and kube-proxy
   kube-node:
     hostname: kube-node
     networks:

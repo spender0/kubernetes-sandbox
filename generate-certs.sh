@@ -32,12 +32,16 @@ cat certs/front-proxy-ca.crt certs/company-root-ca.crt > certs/front-proxy-ca-bu
 #generate and sign etcd server cert:
 openssl genrsa -out certs/etcd/server.key 4096
 openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=kube-etcd"  -key certs/etcd/server.key -out certs/etcd/server.csr
-openssl x509 -req -days 9999  -sha256 -CA certs/etcd/ca.crt -CAkey certs/etcd/ca.key -set_serial 01 -extensions req_ext -in certs/etcd/server.csr -out certs/etcd/server.crt
+openssl x509 -req -days 9999  \
+  -extfile <(printf "subjectAltName=DNS:kube-etcd1,DNS:kube-etcd2,DNS:kube-etcd3,DNS:kube-etcd,DNS:localhost") \
+  -sha256 -CA certs/etcd/ca.crt -CAkey certs/etcd/ca.key -set_serial 01 -in certs/etcd/server.csr -out certs/etcd/server.crt
 
 #generate and sign etcd peer cert:
 openssl genrsa -out certs/etcd/peer.key 4096
 openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=kube-etcd-peer"  -key certs/etcd/peer.key -out certs/etcd/peer.csr
-openssl x509 -req -days 9999  -sha256 -CA certs/etcd/ca.crt -CAkey certs/etcd/ca.key -set_serial 01 -extensions req_ext -in certs/etcd/peer.csr -out certs/etcd/peer.crt
+openssl x509 -req -days 9999 \
+  -extfile <(printf "subjectAltName=DNS:kube-etcd1,DNS:kube-etcd2,DNS:kube-etcd,DNS:localhost") \
+  -sha256 -CA certs/etcd/ca.crt -CAkey certs/etcd/ca.key -set_serial 01 -in certs/etcd/peer.csr -out certs/etcd/peer.crt
 
 #generate and sign kube-etcd-healthcheck-client cert:
 openssl genrsa -out certs/etcd/healthcheck-client.key 4096
