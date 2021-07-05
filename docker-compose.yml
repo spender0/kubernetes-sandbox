@@ -41,7 +41,7 @@ services:
 
   #2-deploy etcd. The state of the cluster is saved here.
   kube-etcd1:
-    image: gcr.io/google-containers/etcd:${ETCD_RELEASE}
+    image: gcr.io/etcd-development/etcd:${ETCD_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
@@ -80,15 +80,17 @@ services:
       - --trusted-ca-file=/certs/etcd/ca-bundle.crt
     volumes:
       - ./certs:/certs
-    healthcheck:
-      test: 'ss | grep 2379'
-      interval: 3s
-      retries: 3
+    # ss command not found in new etcd
+    # there is no other tools to make health checks
+    #healthcheck:
+      #test: 'ss | grep 2379'
+      #interval: 3s
+      #retries: 3
       #start_period: 3m
     depends_on:
       - generate-certs
   kube-etcd2:
-    image: gcr.io/google-containers/etcd:${ETCD_RELEASE}
+    image: gcr.io/etcd-development/etcd:${ETCD_RELEASE}
     deploy:
       restart_policy:
         condition: on-failure
@@ -127,10 +129,12 @@ services:
       - --trusted-ca-file=/certs/etcd/ca-bundle.crt
     volumes:
       - ./certs:/certs
-    healthcheck:
-      test: 'ss | grep 2379'
-      interval: 3s
-      retries: 3
+    # ss command not found in new etcd
+    # there is no other tools to make health checks
+    #healthcheck:
+      #test: 'ss | grep 2379'
+      #interval: 3s
+      #retries: 3
       #start_period: 3m
     depends_on:
       - generate-certs

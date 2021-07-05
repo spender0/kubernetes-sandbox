@@ -1,6 +1,8 @@
 FROM debian:9
 
-ARG K8S_RELEASE=v1.17.2
+ARG K8S_RELEASE=v1.18.6
+
+ARG HELM_RELEASE=v3.6.2
 
 ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kubeadm \
     /usr/local/bin/kubeadm
@@ -8,13 +10,13 @@ ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin
 ADD https://storage.googleapis.com/kubernetes-release/release/${K8S_RELEASE}/bin/linux/amd64/kubectl \
     /usr/local/bin/kubectl
 
-ADD https://get.helm.sh/helm-v3.0.2-linux-amd64.tar.gz /tmp/
+ADD https://get.helm.sh/helm-${HELM_RELASE}-linux-amd64.tar.gz /tmp/
 
 
 
 RUN chmod 755 /usr/local/bin/kubectl && \
     chmod 755 /usr/local/bin/kubeadm && \
-    cd /tmp && tar -xvf helm-v3.0.2-linux-amd64.tar.gz && \
+    cd /tmp && tar -xvf helm-${HELM_RELASE}-linux-amd64.tar.gz && \
     mv linux-amd64/helm /usr/local/bin/ && \
     apt-get update && \
     apt-get install -y curl net-tools openssl && \
