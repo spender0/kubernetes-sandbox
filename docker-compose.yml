@@ -240,12 +240,13 @@ services:
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config use-context default-system &&
        chmod 777 /conf && chmod -R 666 /conf/*)) &&
        kubectl --kubeconfig=/conf/admin.conf apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml &&
-       helm repo add stable https://kubernetes-charts.storage.googleapis.com &&
+       helm repo add coredns https://coredns.github.io/helm &&
+       helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/ &&
        helm repo update &&
        ((helm --kubeconfig=conf/admin.conf list -a -n kube-system | grep coredns) ||
-       (helm --kubeconfig=conf/admin.conf upgrade --install --namespace kube-system coredns stable/coredns --set service.clusterIP=10.1.0.2)) &&
+       (helm --kubeconfig=conf/admin.conf upgrade --install --namespace kube-system coredns coredns/coredns --set service.clusterIP=10.1.0.2)) &&
        ((helm --kubeconfig=conf/admin.conf list -a -n kube-system | grep kubernetes-dashboard) ||
-       (helm --kubeconfig=/conf/admin.conf upgrade --install --namespace kube-system kubernetes-dashboard stable/kubernetes-dashboard))'
+       (helm --kubeconfig=/conf/admin.conf upgrade --install --namespace kube-system kubernetes-dashboard kubernetes-dashboard/kubernetes-dashboard))'
     environment:
       #where kubeadm and kubectl should keep it's config
       KUBECONFIG: /conf/admin.conf
