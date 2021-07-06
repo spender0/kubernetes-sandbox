@@ -39,6 +39,38 @@ services:
       - ./certs:/certs
       - ./conf:/conf
 
+  #2-deploy keycloak. The state of the cluster is saved here.
+  keycloak:
+    image: quay.io/keycloak/keycloak:14.0.0
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 0s
+        max_attempts: 15
+    restart: on-failure
+    #set hostname that will be used by api-server to reach keycloak
+    hostname: keycloak
+    ports:
+      - 8080:8080
+      - 8443:8443
+    environment:
+      KEYCLOAK_USER: keycloak-admin
+      KEYCLOAK_PASSWORD: keycloak-password
+      KEYCLOAK_LOGLEVEL: INFO
+      KEYCLOAK_IMPORT: /tmp/keycloak-realm.json
+    networks:
+      - kubenet
+    volumes:
+      - ./certs/keycloak/x509:/etc/x509/https
+      - ./conf/keycloak-realm.json:/tmp/keycloak-realm.json
+    healthcheck:
+      test: 'curl http://localhost:8080'
+      interval: 3s
+      retries: 3
+      start_period: 3m
+    depends_on:
+      - generate-certs
+
   #2-deploy etcd. The state of the cluster is saved here.
   kube-etcd1:
     image: gcr.io/etcd-development/etcd:${ETCD_RELEASE}
@@ -208,6 +240,22 @@ services:
       #enable role based authorization control https://kubernetes.io/docs/reference/access-authn-authz/rbac/#controller-roles
       - --authorization-mode=RBAC
 
+      #oidc
+      # apiserver validates tokens via Keycloak with preconfigured realm "kubernetes-sandbox"
+      - --oidc-issuer-url=https://keycloak:8443/auth/realms/kubernetes-sandbox
+      
+      # client "kubernetes-sandbox" is precreated in Keycloak
+      - --oidc-client-id=kubernetes-sandbox
+
+      #get user name from "preferred_username" claim in id_token
+      - --oidc-username-claim=preferred_username
+
+      #use "groups" claim in id_token to identifiy which group the user belongs to
+      - --oidc-groups-claim=groups
+
+      #trast keycloak tls endpoint
+      - --oidc-ca-file=/certs/keycloak/ca.crt  
+   
     volumes:
       - ./certs:/certs
     depends_on:
@@ -215,7 +263,7 @@ services:
       - generate-certs
 
   #4-deploy kubeadm
-  #this creates a container with configured kubectl an kubeadm utils
+  #this creates a container with configured kubectl and kubeadm utils
   #besides that it creates temporary kubelet-bootstrap.conf that contains short ttl bootstrap token
   kubeadm:
     build:
@@ -236,6 +284,7 @@ services:
     command: >
       -c '
        kubectl --kubeconfig=/conf/admin.conf apply -f /conf/kubelet-tls-bootstrapping.yaml &&
+       kubectl --kubeconfig=/conf/admin.conf apply -f /conf/view-cluster-role-binding.yaml &&
        ((ls /conf/kubelet-bootstrap.conf) ||
        (kubeadm --kubeconfig=/conf/admin.conf token create --ttl 60m k6u9qr.mdacndgrkcs6wamw &&
        kubectl --kubeconfig=/conf/kubelet-bootstrap.conf config set-cluster default-cluster --server=https://kube-apiserver:6443 --certificate-authority certs/kubernetes-ca-bundle.crt --embed-certs &&

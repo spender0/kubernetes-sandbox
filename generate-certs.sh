@@ -10,6 +10,13 @@ openssl req -nodes -subj "/C=US/ST=None/L=None/O=None/CN=example.com" -new -x509
 #but you'd better not reveal your root CA with creating
 #intermediate certificates specially for kubernetes related stuff
 
+#generate intermediate keycloak ca:
+mkdir -p certs/keycloak
+openssl genrsa -out certs/keycloak/ca.key 4096
+openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=keycloak-ca"  -key certs/keycloak/ca.key -out certs/keycloak/ca.csr
+openssl x509 -req -days 9999  -sha256 -CA certs/company-root-ca.crt -CAkey certs/company-root-ca.key -set_serial 01 -extensions req_ext -in certs/keycloak/ca.csr -out certs/keycloak/ca.crt
+cat certs/keycloak/ca.crt certs/company-root-ca.crt > certs/keycloak/ca-bundle.crt
+
 #generate intermediate etcd-ca:
 mkdir -p certs/etcd
 openssl genrsa -out certs/etcd/ca.key 4096
@@ -28,6 +35,13 @@ openssl genrsa -out certs/front-proxy-ca.key 4096
 openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=kubernetes-ca"  -key certs/front-proxy-ca.key -out certs/front-proxy-ca.csr
 openssl x509 -req -days 9999  -sha256 -CA certs/company-root-ca.crt -CAkey certs/company-root-ca.key -set_serial 02 -extensions req_ext -in certs/front-proxy-ca.csr -out certs/front-proxy-ca.crt
 cat certs/front-proxy-ca.crt certs/company-root-ca.crt > certs/front-proxy-ca-bundle.crt
+
+#generate and sign keycloak server cert:
+openssl genrsa -out certs/keycloak/x509/tls.key 4096
+openssl req -new -nodes -sha256 -subj "/C=US/ST=None/L=None/O=None/CN=keycloak"  -key certs/keycloak/x509/tls.key -out certs/keycloak/server.csr
+openssl x509 -req -days 9999  \
+  -extfile <(printf "subjectAltName=DNS:keycloak,DNS:localhost,DNS:127.0.0.1") \
+  -sha256 -CA certs/keycloak/ca.crt -CAkey certs/keycloak/ca.key -set_serial 01 -in certs/keycloak/server.csr -out certs/keycloak/x509/tls.crt
 
 #generate and sign etcd server cert:
 openssl genrsa -out certs/etcd/server.key 4096

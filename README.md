@@ -14,7 +14,8 @@ It is just well-commented code. I believe that well-commented code examples are 
 * SSL certificates and requirements with using old good openssl tool
 * Fully automated and dockerized, only docker and docker-compose required
 * All settings are transparent, you can fully control the cluster
-* New convenient feature is implemented https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens
+* Bootstrap tokens are enabled and used  https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens
+* OpenID Connect Tokens configured usign Keycloak https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens
 
 #### Requirements:
 * Docker https://docs.docker.com/install/
@@ -31,11 +32,7 @@ cd kubernetes-sandbox
 docker-compose up -d
 ```
 
-kubectl is available either via docker:
-
-`docker exec -it kubernetes-sandbox_kubeadm_1 bash`
-
-or you can install it https://kubernetes.io/docs/tasks/tools/install-kubectl/
+Install it https://kubernetes.io/docs/tasks/tools/install-kubectl/
 
 and then run:
 
@@ -44,6 +41,20 @@ export KUBECONFIG=conf/admin-local.conf
 
 kubectl -n kube-system get pods
 ``` 
+
+Aslo, you can test OpenID Connect Tokens with Keycloak and precreated k8s-user1 with read-only permissions in k8s:
+
+```
+./generate-kubeconfig-with-keycloak-token.sh
+
+export KUBECONFIG=conf/k8s-user1-kubeconfig.conf
+
+#this should be allowed
+kubectl get ns
+
+#this should be declined:
+kubectl create ns test
+```
 
 #### Stop:
 ```
