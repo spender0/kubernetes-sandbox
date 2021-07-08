@@ -15,7 +15,7 @@ It is just well-commented code. I believe that well-commented code examples are 
 * Fully automated and dockerized, only docker and docker-compose required
 * All settings are transparent, you can fully control the cluster
 * Bootstrap tokens are enabled and used  https://kubernetes.io/docs/reference/access-authn-authz/bootstrap-tokens
-* OpenID Connect Tokens configured usign Keycloak https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens
+* OpenID Connect Tokens configured using Keycloak https://kubernetes.io/docs/reference/access-authn-authz/authentication/#openid-connect-tokens
 
 #### Requirements:
 * Docker https://docs.docker.com/install/
