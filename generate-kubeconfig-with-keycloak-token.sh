@@ -24,7 +24,7 @@ export KUBECONFIG=conf/k8s-user1-kubeconfig.conf
 kubectl config set-credentials k8s-user1 \
    --auth-provider=oidc \
    --auth-provider-arg=idp-issuer-url=${KEYCLOK_URL}/auth/realms/${REALM} \
-   --auth-provider-arg=client-id=kube-apiserver \
+   --auth-provider-arg=client-id=${CLIENT_ID} \
    --auth-provider-arg=refresh-token=${REFRESH_TOKEN} \
    --auth-provider-arg=idp-certificate-authority=certs/keycloak/ca.crt \
    --auth-provider-arg=id-token=${ID_TOKEN}
