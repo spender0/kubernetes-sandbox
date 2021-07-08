@@ -253,7 +253,7 @@ services:
       #use "groups" claim in id_token to identifiy which group the user belongs to
       - --oidc-groups-claim=groups
 
-      #trast keycloak tls endpoint
+      #trust keycloak tls endpoint
       - --oidc-ca-file=/certs/keycloak/ca.crt  
    
     volumes:
